@@ -29,6 +29,7 @@ def refresh_token():
     ENV_FILE.touch(exist_ok=True)
     set_key(ENV_FILE, "INSTAGRAM_ACCESS_TOKEN", new_token)
     set_key(ENV_FILE, "INSTAGRAM_TOKEN_EXPIRES_AT", expires_str)
+    os.environ["INSTAGRAM_ACCESS_TOKEN"] = new_token
 
     return {"access_token": new_token, "expires_at": expires_str}
 

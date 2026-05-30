@@ -18,7 +18,7 @@ REFRESH_URL = "https://graph.instagram.com/refresh_access_token"
 def _get(path, params=None):
     response = requests.get(
         f"{BASE_URL}{path}",
-        params={"access_token": ACCESS_TOKEN, **(params or {})},
+        params={"access_token": os.getenv("INSTAGRAM_ACCESS_TOKEN"), **(params or {})},
     )
     data = response.json()
     if "error" in data:
@@ -29,7 +29,7 @@ def _get(path, params=None):
 def _post(path, data=None):
     response = requests.post(
         f"{BASE_URL}{path}",
-        data={"access_token": ACCESS_TOKEN, **(data or {})},
+        data={"access_token": os.getenv("INSTAGRAM_ACCESS_TOKEN"), **(data or {})},
     )
     result = response.json()
     if "error" in result:
