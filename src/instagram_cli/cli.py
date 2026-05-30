@@ -45,8 +45,8 @@ def _print_media_list(items):
 def _print_insights(items):
     for item in items:
         value = item.get("values", [{}])[0].get("value", "n/a")
-        print(f"  {item['title']}: {value}")
-        print(f"    {item['description']}")
+        print(f"  {item.get('title', 'unknown')}: {value}")
+        print(f"    {item.get('description', '')}")
         print()
 
 
