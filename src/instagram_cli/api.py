@@ -1,13 +1,19 @@
 import os
 import requests
-from dotenv import load_dotenv
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from dotenv import load_dotenv, set_key
 
-load_dotenv()
+CONFIG_DIR = Path.home() / ".config" / "instagram-cli"
+ENV_FILE = CONFIG_DIR / ".env"
+
+load_dotenv(ENV_FILE)
 
 ACCESS_TOKEN = os.getenv("INSTAGRAM_ACCESS_TOKEN")
 USER_ID = os.getenv("INSTAGRAM_USER_ID")
 
 BASE_URL = "https://graph.instagram.com/v21.0"
+REFRESH_URL = "https://graph.instagram.com/refresh_access_token"
 
 
 def _get(path, params=None):
@@ -113,6 +119,36 @@ def post_carousel(items, caption=None):
     ]
     creation_id = create_carousel_container(children, caption)
     return publish_container(creation_id)
+
+
+def refresh_token():
+    response = requests.get(
+        REFRESH_URL,
+        params={"grant_type": "ig_refresh_token", "access_token": ACCESS_TOKEN},
+    )
+    data = response.json()
+    if "error" in data:
+        raise RuntimeError(data["error"]["message"])
+
+    new_token = data["access_token"]
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=data["expires_in"])
+    expires_str = expires_at.strftime("%Y-%m-%d")
+
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    ENV_FILE.touch(exist_ok=True)
+    set_key(ENV_FILE, "INSTAGRAM_ACCESS_TOKEN", new_token)
+    set_key(ENV_FILE, "INSTAGRAM_TOKEN_EXPIRES_AT", expires_str)
+
+    return {"access_token": new_token, "expires_at": expires_str}
+
+
+def get_token_status():
+    expires_at = os.getenv("INSTAGRAM_TOKEN_EXPIRES_AT")
+    return {
+        "token_set": ACCESS_TOKEN is not None,
+        "user_id_set": USER_ID is not None,
+        "expires_at": expires_at or "unknown (run 'auth refresh' to store expiry)",
+    }
 
 
 def test_connection():

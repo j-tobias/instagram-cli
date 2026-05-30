@@ -8,6 +8,9 @@ from instagram_cli.api import (
     post_image,
     post_reel,
     post_carousel,
+    refresh_token,
+    get_token_status,
+    ENV_FILE,
 )
 
 USAGE_LIMITS = """
@@ -60,6 +63,42 @@ def main():
             "Verifies that your access token and user ID are valid by fetching\n"
             "basic profile fields (id, username, follower count, media count).\n"
             "Useful for confirming credentials are set up correctly."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    # auth
+    auth_parser = subparsers.add_parser(
+        "auth",
+        help="Manage your access token",
+        description=(
+            "Commands for managing your Instagram access token.\n\n"
+            f"Credentials are stored in: {ENV_FILE}"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    auth_sub = auth_parser.add_subparsers(dest="auth_command", required=True)
+
+    auth_sub.add_parser(
+        "status",
+        help="Show token status and expiry date",
+        description=(
+            "Displays whether a token and user ID are configured, and when the\n"
+            "current token expires. The expiry date is stored locally after running\n"
+            "'auth refresh' and is not fetched from Instagram."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    auth_sub.add_parser(
+        "refresh",
+        help="Refresh the access token (extends expiry by 60 days)",
+        description=(
+            "Extends your long-lived access token by another 60 days.\n"
+            "The new token and its expiry date are written back to:\n\n"
+            f"  {ENV_FILE}\n\n"
+            "Tokens can only be refreshed when they are at least 24 hours old\n"
+            "and have not yet expired. Run this periodically to avoid disruption."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -206,6 +245,13 @@ def main():
     try:
         if args.command == "connection":
             test_connection()
+
+        elif args.command == "auth":
+            if args.auth_command == "status":
+                _print_dict(get_token_status())
+            elif args.auth_command == "refresh":
+                result = refresh_token()
+                print(f"Token refreshed. Expires: {result['expires_at']}")
 
         elif args.command == "profile":
             _print_dict(get_profile())
