@@ -20,7 +20,13 @@ Read your profile and media, and publish images, reels, and carousels directly f
 
 ## Quick Start
 
-**Install:**
+**Install from GitHub:**
+
+```bash
+uv tool install git+https://github.com/j-tobias/instagram-cli
+```
+
+**Or clone and install locally:**
 
 ```bash
 uv pip install -e .
