@@ -1,3 +1,4 @@
+import sys
 import time
 from instagram_cli.api.client import _get, _post, USER_ID
 
@@ -35,16 +36,22 @@ def create_carousel_container(children, caption=None):
 
 
 def wait_for_container(creation_id, timeout=300, interval=5):
-    deadline = time.time() + timeout
+    start = time.time()
+    deadline = start + timeout
     while time.time() < deadline:
+        elapsed = int(time.time() - start)
+        print(f"\r  Processing video... {elapsed}s elapsed", end="", flush=True, file=sys.stderr)
         data = _get(f"/{creation_id}", {"fields": "status_code"})
         status = data.get("status_code", "")
         if status == "FINISHED":
+            print("\r  Processing video... done.          ", file=sys.stderr)
             time.sleep(2)
             return
         if status == "ERROR":
+            print("\r  Processing video... ERROR.          ", file=sys.stderr)
             raise RuntimeError("Media container processing failed (status: ERROR)")
         time.sleep(interval)
+    print("\r  Processing video... timed out.      ", file=sys.stderr)
     raise RuntimeError(f"Timed out after {timeout}s waiting for media container — Instagram is still processing the video. Try again later or use a shorter/smaller video.")
 
 
