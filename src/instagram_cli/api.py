@@ -95,6 +95,21 @@ def create_carousel_container(children, caption=None):
     return _post(f"/{USER_ID}/media", payload)["id"]
 
 
+def wait_for_container(creation_id, timeout=120, interval=5):
+    """Poll container status until FINISHED or timeout (seconds)."""
+    import time
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        data = _get(f"/{creation_id}", {"fields": "status_code"})
+        status = data.get("status_code", "")
+        if status == "FINISHED":
+            return
+        if status == "ERROR":
+            raise RuntimeError(f"Media container processing failed (status: ERROR)")
+        time.sleep(interval)
+    raise RuntimeError(f"Timed out waiting for media container to finish processing")
+
+
 def publish_container(creation_id):
     return _post(f"/{USER_ID}/media_publish", {"creation_id": creation_id})["id"]
 
@@ -106,6 +121,7 @@ def post_image(image_url, caption=None):
 
 def post_reel(video_url, caption=None):
     creation_id = create_reel_container(video_url, caption)
+    wait_for_container(creation_id)
     return publish_container(creation_id)
 
 
