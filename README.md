@@ -65,10 +65,20 @@ Prints your account fields: id, username, name, followers\_count, media\_count.
 instagram-cli media list           # 10 most recent posts
 instagram-cli media list --limit 25
 instagram-cli media get <media_id>
+instagram-cli media insights <media_id>
 ```
 
 `list` returns id, caption, media\_type, timestamp, and permalink per item.
 `get` additionally returns like\_count and comments\_count.
+`insights` fetches lifetime engagement metrics from the insights endpoint and prints each one with its title and description. Metrics vary by media type:
+
+| Type | Metrics |
+|---|---|
+| Image | impressions, reach, saved, shares, likes, comments, total\_interactions, profile\_visits, follows |
+| Reel / Video | above + plays, avg\_watch\_time, total\_watch\_time |
+| Carousel | impressions, reach, saved, shares, likes, comments, total\_interactions, per-slide impressions/reach/engagement/saves |
+
+Requires a Business or Creator account.
 
 ---
 

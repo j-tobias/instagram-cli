@@ -5,6 +5,7 @@ from instagram_cli.api import (
     get_profile,
     get_media_list,
     get_media,
+    get_media_insights,
     post_image,
     post_reel,
     post_carousel,
@@ -41,14 +42,22 @@ def _print_media_list(items):
         print()
 
 
+def _print_insights(items):
+    for item in items:
+        value = item.get("values", [{}])[0].get("value", "n/a")
+        print(f"  {item['title']}: {value}")
+        print(f"    {item['description']}")
+        print()
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="instagram-cli",
         description=(
             "A CLI for the Instagram Graph API.\n\n"
-            "Read your profile and media, or publish images, reels, and carousels\n"
-            "directly from the terminal. All commands require a valid access token\n"
-            "set via the INSTAGRAM_ACCESS_TOKEN environment variable."
+            "Read your profile and media, fetch post engagement insights, or publish\n"
+            "images, reels, and carousels directly from the terminal. All commands\n"
+            "require a valid access token set via the INSTAGRAM_ACCESS_TOKEN environment variable."
         ),
         epilog=USAGE_LIMITS,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -118,7 +127,7 @@ def main():
     media_parser = subparsers.add_parser(
         "media",
         help="Read your published media",
-        description="Commands for reading published posts on your account.",
+        description="Commands for reading published posts and fetching engagement insights.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     media_sub = media_parser.add_subparsers(dest="media_command", required=True)
@@ -152,6 +161,21 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     media_get_p.add_argument(
+        "media_id",
+        help="Numeric ID of the media item (visible in 'media list' output)",
+    )
+
+    media_insights_p = media_sub.add_parser(
+        "insights",
+        help="Get engagement metrics for a post",
+        description=(
+            "Fetches lifetime engagement metrics for a post via the insights endpoint.\n"
+            "Metrics vary by media type (image, reel, carousel).\n"
+            "Requires a Business or Creator account."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    media_insights_p.add_argument(
         "media_id",
         help="Numeric ID of the media item (visible in 'media list' output)",
     )
@@ -261,6 +285,8 @@ def main():
                 _print_media_list(get_media_list(limit=args.limit))
             elif args.media_command == "get":
                 _print_dict(get_media(args.media_id))
+            elif args.media_command == "insights":
+                _print_insights(get_media_insights(args.media_id))
 
         elif args.command == "post":
             if args.post_command == "image":
