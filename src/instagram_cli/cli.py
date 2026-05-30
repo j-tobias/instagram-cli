@@ -238,25 +238,36 @@ def main():
 
     post_carousel_p = post_sub.add_parser(
         "carousel",
-        help="Publish a carousel of images (2–10 items)",
+        help="Publish a carousel of images and/or videos (2–10 items)",
         description=(
-            "Publishes multiple images as a single swipeable carousel post.\n"
-            "Pass 2 to 10 publicly accessible image URLs as positional arguments.\n\n"
-            "Each image must meet the same requirements as a single image post\n"
-            "(JPEG, max 8 MB, aspect ratio 4:5 to 1.91:1). All images in a\n"
-            "carousel are cropped to a square (1:1) in the feed thumbnail.\n\n"
-            "Example:\n"
+            "Publishes 2 to 10 images and/or videos as a single swipeable carousel post.\n"
+            "Positional URLs are treated as images; use --video for video items.\n\n"
+            "Note: all image URLs are added first (in order), followed by all --video\n"
+            "URLs (in order). Mixed ordering is not supported.\n\n"
+            "Image requirements: JPEG, max 8 MB, aspect ratio 4:5 to 1.91:1.\n"
+            "Video requirements: MOV or MP4 (H.264), AAC audio, max 60 seconds.\n\n"
+            "Examples:\n"
             "  instagram-cli post carousel https://example.com/1.jpg \\\n"
-            "                              https://example.com/2.jpg \\\n"
+            "                              https://example.com/2.jpg\n"
+            "  instagram-cli post carousel https://example.com/1.jpg \\\n"
+            "                              --video https://example.com/clip.mp4 \\\n"
             "                              --caption \"My carousel\""
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     post_carousel_p.add_argument(
         "urls",
-        nargs="+",
+        nargs="*",
         metavar="URL",
-        help="Publicly accessible HTTPS image URLs (2–10 required)",
+        help="Publicly accessible HTTPS image URLs (optional if --video is used)",
+    )
+    post_carousel_p.add_argument(
+        "--video",
+        dest="video_urls",
+        action="append",
+        default=[],
+        metavar="URL",
+        help="Publicly accessible HTTPS video URL; repeat for multiple videos",
     )
     post_carousel_p.add_argument(
         "--caption",
@@ -296,10 +307,11 @@ def main():
                 post_id = post_reel(args.url, caption=args.caption)
                 print(f"Posted: {post_id}")
             elif args.post_command == "carousel":
-                if not 2 <= len(args.urls) <= 10:
-                    print("Error: carousel requires between 2 and 10 image URLs")
-                    sys.exit(1)
                 items = [{"image_url": url} for url in args.urls]
+                items += [{"video_url": url} for url in args.video_urls]
+                if not 2 <= len(items) <= 10:
+                    print("Error: carousel requires between 2 and 10 items (images + videos)")
+                    sys.exit(1)
                 post_id = post_carousel(items, caption=args.caption)
                 print(f"Posted: {post_id}")
 

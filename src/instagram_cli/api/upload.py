@@ -71,12 +71,14 @@ def post_reel(video_url, caption=None):
 
 
 def post_carousel(items, caption=None):
-    children = [
-        create_carousel_item(
+    children = []
+    for item in items:
+        child_id = create_carousel_item(
             image_url=item.get("image_url"),
             video_url=item.get("video_url"),
         )
-        for item in items
-    ]
+        if item.get("video_url"):
+            wait_for_container(child_id)
+        children.append(child_id)
     creation_id = create_carousel_container(children, caption)
     return publish_container(creation_id)
