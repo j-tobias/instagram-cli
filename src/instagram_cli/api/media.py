@@ -1,15 +1,11 @@
 from instagram_cli.api.client import _get, USER_ID
 
-_METRICS_BASE = "impressions,reach,saved,shares,likes,comments,total_interactions"
+_METRICS_BASE = "reach,saved,shares,likes,comments,total_interactions"
 _METRICS_BY_TYPE = {
     "IMAGE": _METRICS_BASE + ",profile_visits,follows",
-    "VIDEO": _METRICS_BASE + ",plays,ig_reels_avg_watch_time,ig_reels_video_view_total_time",
-    "REELS": _METRICS_BASE + ",plays,ig_reels_avg_watch_time,ig_reels_video_view_total_time",
-    "CAROUSEL_ALBUM": (
-        "impressions,reach,saved,shares,likes,comments,total_interactions,"
-        "carousel_album_impressions,carousel_album_reach,"
-        "carousel_album_engagement,carousel_album_saved"
-    ),
+    "VIDEO": _METRICS_BASE + ",views,ig_reels_avg_watch_time,ig_reels_video_view_total_time",
+    "REELS": _METRICS_BASE + ",views,ig_reels_avg_watch_time,ig_reels_video_view_total_time",
+    "CAROUSEL_ALBUM": _METRICS_BASE,
 }
 
 

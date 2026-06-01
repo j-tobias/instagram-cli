@@ -74,9 +74,9 @@ instagram-cli media insights <media_id>
 
 | Type | Metrics |
 |---|---|
-| Image | impressions, reach, saved, shares, likes, comments, total\_interactions, profile\_visits, follows |
-| Reel / Video | above + plays, avg\_watch\_time, total\_watch\_time |
-| Carousel | impressions, reach, saved, shares, likes, comments, total\_interactions, per-slide impressions/reach/engagement/saves |
+| Image | reach, saved, shares, likes, comments, total\_interactions, profile\_visits, follows |
+| Reel / Video | above + views, avg\_watch\_time, total\_watch\_time |
+| Carousel | reach, saved, shares, likes, comments, total\_interactions |
 
 Requires a Business or Creator account.
 
