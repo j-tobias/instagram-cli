@@ -1,5 +1,8 @@
+import os
 import sys
 import argparse
+from pathlib import Path
+from instagram_cli.tunnel import public_tunnel
 from instagram_cli.api import (
     test_connection,
     get_profile,
@@ -13,6 +16,22 @@ from instagram_cli.api import (
     get_token_status,
     ENV_FILE,
 )
+
+def _is_local(s: str) -> bool:
+    return not s.startswith(("http://", "https://"))
+
+
+def _ngrok_token() -> str:
+    tok = os.getenv("NGROK_AUTHTOKEN", "")
+    if not tok:
+        print(
+            "Error: NGROK_AUTHTOKEN is not set.\n"
+            "Add it to ~/.config/instagram-cli/.env or export it in your shell.\n"
+            "Get your token at: https://dashboard.ngrok.com/get-started/your-authtoken"
+        )
+        sys.exit(1)
+    return tok
+
 
 USAGE_LIMITS = """
 Usage limits (Instagram Graph API):
@@ -197,9 +216,10 @@ def main():
         "image",
         help="Publish a single image post",
         description=(
-            "Publishes a single image to your feed. The image must be hosted at\n"
-            "a publicly accessible HTTPS URL. Instagram will fetch it at publish\n"
-            "time, so it must remain accessible until the post goes live.\n\n"
+            "Publishes a single image to your feed.\n\n"
+            "Pass a local file path or a publicly accessible HTTPS URL.\n"
+            "Local files are served temporarily via an ngrok tunnel\n"
+            "(requires NGROK_AUTHTOKEN in ~/.config/instagram-cli/.env).\n\n"
             "Supported formats: JPEG. Max file size: 8 MB.\n"
             "Aspect ratios: 4:5 (portrait) to 1.91:1 (landscape)."
         ),
@@ -207,7 +227,7 @@ def main():
     )
     post_image_p.add_argument(
         "url",
-        help="Publicly accessible HTTPS URL of the image to post",
+        help="HTTPS URL or local file path of the image to post",
     )
     post_image_p.add_argument(
         "--caption",
@@ -219,8 +239,11 @@ def main():
         "reel",
         help="Publish a reel (short video)",
         description=(
-            "Publishes a video as an Instagram Reel. The video must be hosted at\n"
-            "a publicly accessible HTTPS URL.\n\n"
+            "Publishes a video as an Instagram Reel.\n\n"
+            "Pass a local file path or a publicly accessible HTTPS URL.\n"
+            "Local files are served temporarily via an ngrok tunnel\n"
+            "(requires NGROK_AUTHTOKEN in ~/.config/instagram-cli/.env).\n"
+            "The tunnel stays open while Instagram processes the video.\n\n"
             "Requirements: MOV or MP4 (H.264 codec), AAC audio, 30 fps max,\n"
             "minimum 720px width, aspect ratio 9:16, duration 3–90 seconds."
         ),
@@ -228,7 +251,7 @@ def main():
     )
     post_reel_p.add_argument(
         "url",
-        help="Publicly accessible HTTPS URL of the video to post",
+        help="HTTPS URL or local file path of the video to post",
     )
     post_reel_p.add_argument(
         "--caption",
@@ -241,17 +264,21 @@ def main():
         help="Publish a carousel of images and/or videos (2–10 items)",
         description=(
             "Publishes 2 to 10 images and/or videos as a single swipeable carousel post.\n"
-            "Positional URLs are treated as images; use --video for video items.\n\n"
-            "Note: all image URLs are added first (in order), followed by all --video\n"
-            "URLs (in order). Mixed ordering is not supported.\n\n"
+            "Positional args are image paths/URLs; use --video for video items.\n\n"
+            "Local file paths are served temporarily via an ngrok tunnel\n"
+            "(requires NGROK_AUTHTOKEN in ~/.config/instagram-cli/.env).\n"
+            "You can freely mix local paths and remote URLs in the same carousel.\n\n"
+            "Note: all image items are added first (in order), followed by all --video\n"
+            "items (in order). Mixed ordering is not supported.\n\n"
             "Image requirements: JPEG, max 8 MB, aspect ratio 4:5 to 1.91:1.\n"
             "Video requirements: MOV or MP4 (H.264), AAC audio, max 60 seconds.\n\n"
             "Examples:\n"
+            "  instagram-cli post carousel ./1.jpg ./2.jpg\n"
+            "  instagram-cli post carousel ./photo.jpg \\\n"
+            "                              --video ./clip.mp4 \\\n"
+            "                              --caption \"My carousel\"\n"
             "  instagram-cli post carousel https://example.com/1.jpg \\\n"
-            "                              https://example.com/2.jpg\n"
-            "  instagram-cli post carousel https://example.com/1.jpg \\\n"
-            "                              --video https://example.com/clip.mp4 \\\n"
-            "                              --caption \"My carousel\""
+            "                              https://example.com/2.jpg"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -259,7 +286,7 @@ def main():
         "urls",
         nargs="*",
         metavar="URL",
-        help="Publicly accessible HTTPS image URLs (optional if --video is used)",
+        help="HTTPS URL or local file path for image items (optional if --video is used)",
     )
     post_carousel_p.add_argument(
         "--video",
@@ -267,7 +294,7 @@ def main():
         action="append",
         default=[],
         metavar="URL",
-        help="Publicly accessible HTTPS video URL; repeat for multiple videos",
+        help="HTTPS URL or local file path for a video item; repeat for multiple videos",
     )
     post_carousel_p.add_argument(
         "--caption",
@@ -301,18 +328,57 @@ def main():
 
         elif args.command == "post":
             if args.post_command == "image":
-                post_id = post_image(args.url, caption=args.caption)
+                if _is_local(args.url):
+                    p = Path(args.url)
+                    if not p.exists():
+                        print(f"Error: file not found: {p}")
+                        sys.exit(1)
+                    print(f"  Starting public tunnel for {p.name}...", file=sys.stderr)
+                    with public_tunnel([p], authtoken=_ngrok_token()) as url_for:
+                        post_id = post_image(url_for(p), caption=args.caption)
+                else:
+                    post_id = post_image(args.url, caption=args.caption)
                 print(f"Posted: {post_id}")
             elif args.post_command == "reel":
-                post_id = post_reel(args.url, caption=args.caption)
+                if _is_local(args.url):
+                    p = Path(args.url)
+                    if not p.exists():
+                        print(f"Error: file not found: {p}")
+                        sys.exit(1)
+                    print(f"  Starting public tunnel for {p.name}...", file=sys.stderr)
+                    with public_tunnel([p], authtoken=_ngrok_token()) as url_for:
+                        post_id = post_reel(url_for(p), caption=args.caption)
+                else:
+                    post_id = post_reel(args.url, caption=args.caption)
                 print(f"Posted: {post_id}")
             elif args.post_command == "carousel":
-                items = [{"image_url": url} for url in args.urls]
-                items += [{"video_url": url} for url in args.video_urls]
+                all_image_urls = list(args.urls)
+                all_video_urls = list(args.video_urls)
+                items = [{"image_url": u} for u in all_image_urls]
+                items += [{"video_url": u} for u in all_video_urls]
                 if not 2 <= len(items) <= 10:
                     print("Error: carousel requires between 2 and 10 items (images + videos)")
                     sys.exit(1)
-                post_id = post_carousel(items, caption=args.caption)
+                local_paths = [
+                    Path(u) for u in all_image_urls + all_video_urls if _is_local(u)
+                ]
+                for p in local_paths:
+                    if not p.exists():
+                        print(f"Error: file not found: {p}")
+                        sys.exit(1)
+                if local_paths:
+                    print(f"  Starting public tunnel for {len(local_paths)} file(s)...", file=sys.stderr)
+                    with public_tunnel(local_paths, authtoken=_ngrok_token()) as url_for:
+                        resolved = [
+                            {"image_url": url_for(Path(u)) if _is_local(u) else u}
+                            for u in all_image_urls
+                        ] + [
+                            {"video_url": url_for(Path(u)) if _is_local(u) else u}
+                            for u in all_video_urls
+                        ]
+                        post_id = post_carousel(resolved, caption=args.caption)
+                else:
+                    post_id = post_carousel(items, caption=args.caption)
                 print(f"Posted: {post_id}")
 
     except RuntimeError as e:
