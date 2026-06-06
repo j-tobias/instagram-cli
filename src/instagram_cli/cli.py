@@ -81,6 +81,11 @@ def main():
         epilog=USAGE_LIMITS,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version="%(prog)s 0.1.0",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # connection
@@ -91,6 +96,10 @@ def main():
             "Verifies that your access token and user ID are valid by fetching\n"
             "basic profile fields (id, username, follower count, media count).\n"
             "Useful for confirming credentials are set up correctly."
+        ),
+        epilog=(
+            "Example:\n"
+            "  instagram-cli connection"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -115,6 +124,10 @@ def main():
             "current token expires. The expiry date is stored locally after running\n"
             "'auth refresh' and is not fetched from Instagram."
         ),
+        epilog=(
+            "Example:\n"
+            "  instagram-cli auth status"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -128,6 +141,10 @@ def main():
             "Tokens can only be refreshed when they are at least 24 hours old\n"
             "and have not yet expired. Run this periodically to avoid disruption."
         ),
+        epilog=(
+            "Example:\n"
+            "  instagram-cli auth refresh"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -136,8 +153,16 @@ def main():
         "profile",
         help="Print your Instagram profile fields",
         description=(
-            "Fetches and prints your Instagram profile: id, username, name,\n"
-            "followers_count, and media_count."
+            "Fetches and prints your Instagram profile fields:\n\n"
+            "  id               Numeric Instagram user ID\n"
+            "  username         Instagram handle (without @)\n"
+            "  name             Display name\n"
+            "  followers_count  Total number of followers\n"
+            "  media_count      Total number of published posts"
+        ),
+        epilog=(
+            "Example:\n"
+            "  instagram-cli profile"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -156,8 +181,17 @@ def main():
         help="List your most recent posts",
         description=(
             "Returns your most recently published posts in reverse chronological\n"
-            "order. Each result includes id, caption, media_type, timestamp,\n"
-            "and permalink."
+            "order. Each result includes:\n\n"
+            "  id          Numeric media ID (use with 'media get' and 'media insights')\n"
+            "  caption     Post caption text\n"
+            "  media_type  IMAGE, VIDEO, REELS, or CAROUSEL_ALBUM\n"
+            "  timestamp   ISO 8601 publish time (UTC)\n"
+            "  permalink   Public URL to the post on Instagram"
+        ),
+        epilog=(
+            "Examples:\n"
+            "  instagram-cli media list\n"
+            "  instagram-cli media list --limit 25"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -173,9 +207,19 @@ def main():
         "get",
         help="Get details for a single post",
         description=(
-            "Fetches full details for one media item by its ID, including\n"
-            "id, caption, media_type, timestamp, permalink, like_count,\n"
-            "and comments_count."
+            "Fetches full details for one media item by its ID:\n\n"
+            "  id              Numeric media ID\n"
+            "  caption         Post caption text\n"
+            "  media_type      IMAGE, VIDEO, REELS, or CAROUSEL_ALBUM\n"
+            "  timestamp       ISO 8601 publish time (UTC)\n"
+            "  permalink       Public URL to the post on Instagram\n"
+            "  like_count      Total number of likes\n"
+            "  comments_count  Total number of comments\n\n"
+            "Find the media ID by running 'instagram-cli media list'."
+        ),
+        epilog=(
+            "Example:\n"
+            "  instagram-cli media get 17854360229135492"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -188,9 +232,18 @@ def main():
         "insights",
         help="Get engagement metrics for a post",
         description=(
-            "Fetches lifetime engagement metrics for a post via the insights endpoint.\n"
-            "Metrics vary by media type (image, reel, carousel).\n"
-            "Requires a Business or Creator account."
+            "Fetches lifetime engagement metrics for a post. Requires a Business\n"
+            "or Creator account. Available metrics depend on media type:\n\n"
+            "  All types:     reach, saved, shares, likes, comments,\n"
+            "                 total_interactions\n"
+            "  IMAGE only:    profile_visits, follows\n"
+            "  VIDEO / REELS: views, ig_reels_avg_watch_time,\n"
+            "                 ig_reels_video_view_total_time\n\n"
+            "Find the media ID by running 'instagram-cli media list'."
+        ),
+        epilog=(
+            "Example:\n"
+            "  instagram-cli media insights 17854360229135492"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -223,6 +276,12 @@ def main():
             "Supported formats: JPEG. Max file size: 8 MB.\n"
             "Aspect ratios: 4:5 (portrait) to 1.91:1 (landscape)."
         ),
+        epilog=(
+            "Examples:\n"
+            "  instagram-cli post image ./photo.jpg\n"
+            "  instagram-cli post image ./photo.jpg --caption \"Hello world #instagram\"\n"
+            "  instagram-cli post image https://example.com/photo.jpg"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     post_image_p.add_argument(
@@ -246,6 +305,12 @@ def main():
             "The tunnel stays open while Instagram processes the video.\n\n"
             "Requirements: MOV or MP4 (H.264 codec), AAC audio, 30 fps max,\n"
             "minimum 720px width, aspect ratio 9:16, duration 3–90 seconds."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  instagram-cli post reel ./clip.mp4\n"
+            "  instagram-cli post reel ./clip.mp4 --caption \"My reel #video\"\n"
+            "  instagram-cli post reel https://example.com/video.mp4"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
