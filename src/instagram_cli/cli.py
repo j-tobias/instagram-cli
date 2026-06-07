@@ -12,10 +12,12 @@ from instagram_cli.api import (
     post_image,
     post_reel,
     post_carousel,
+    promote_trial_reel,
     refresh_token,
     get_token_status,
     ENV_FILE,
 )
+from instagram_cli.fftools import check_reel, transcode_reel
 
 def _is_local(s: str) -> bool:
     return not s.startswith(("http://", "https://"))
@@ -252,6 +254,22 @@ def main():
         help="Numeric ID of the media item (visible in 'media list' output)",
     )
 
+    media_promote_p = media_sub.add_parser(
+        "promote",
+        help="Promote a Trial Reel to your main feed",
+        description=(
+            "Promotes a Trial Reel to your main feed after reviewing its reach stats.\n"
+            "Use the media ID printed when the Trial Reel was posted.\n\n"
+            "Trial Reels are visible only to non-followers for 24 hours before you decide\n"
+            "whether to share them broadly."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    media_promote_p.add_argument(
+        "media_id",
+        help="Media ID of the Trial Reel to promote (from 'post reel --trial' output)",
+    )
+
     # post
     post_parser = subparsers.add_parser(
         "post",
@@ -323,6 +341,24 @@ def main():
         metavar="TEXT",
         help="Caption for the reel (optional). Supports hashtags and @mentions.",
     )
+    post_reel_p.add_argument(
+        "--trial",
+        action="store_true",
+        help=(
+            "Post as a Trial Reel, shown only to non-followers for 24 hours.\n"
+            "After reviewing reach stats, promote to your main feed with:\n"
+            "  instagram-cli media promote <media_id>"
+        ),
+    )
+    post_reel_p.add_argument(
+        "--transcode",
+        action="store_true",
+        help=(
+            "Transcode the video to optimal Instagram spec before uploading:\n"
+            "1080×1920, H.264 High Profile, AAC 192k, 30fps. Requires ffmpeg.\n"
+            "Only supported for local files."
+        ),
+    )
 
     post_carousel_p = post_sub.add_parser(
         "carousel",
@@ -390,6 +426,9 @@ def main():
                 _print_dict(get_media(args.media_id))
             elif args.media_command == "insights":
                 _print_insights(get_media_insights(args.media_id))
+            elif args.media_command == "promote":
+                post_id = promote_trial_reel(args.media_id)
+                print(f"Promoted: {post_id}")
 
         elif args.command == "post":
             if args.post_command == "image":
@@ -410,12 +449,29 @@ def main():
                     if not p.exists():
                         print(f"Error: file not found: {p}")
                         sys.exit(1)
-                    print(f"  Starting public tunnel for {p.name}...", file=sys.stderr)
-                    with public_tunnel([p], authtoken=_ngrok_token()) as url_for:
-                        post_id = post_reel(url_for(p), caption=args.caption)
+                    for w in check_reel(p):
+                        print(f"  Warning: {w}", file=sys.stderr)
+                    if args.transcode:
+                        transcoded = transcode_reel(p)
+                        try:
+                            print(f"  Starting public tunnel for {transcoded.name}...", file=sys.stderr)
+                            with public_tunnel([transcoded], authtoken=_ngrok_token()) as url_for:
+                                post_id = post_reel(url_for(transcoded), caption=args.caption, trial=args.trial)
+                        finally:
+                            transcoded.unlink(missing_ok=True)
+                    else:
+                        print(f"  Starting public tunnel for {p.name}...", file=sys.stderr)
+                        with public_tunnel([p], authtoken=_ngrok_token()) as url_for:
+                            post_id = post_reel(url_for(p), caption=args.caption, trial=args.trial)
                 else:
-                    post_id = post_reel(args.url, caption=args.caption)
-                print(f"Posted: {post_id}")
+                    if args.transcode:
+                        print("  Warning: --transcode is only supported for local files; uploading as-is.", file=sys.stderr)
+                    post_id = post_reel(args.url, caption=args.caption, trial=args.trial)
+                if args.trial:
+                    print(f"Trial Reel: {post_id}")
+                    print(f"  Promote to feed: instagram-cli media promote {post_id}")
+                else:
+                    print(f"Posted: {post_id}")
             elif args.post_command == "carousel":
                 all_image_urls = list(args.urls)
                 all_video_urls = list(args.video_urls)

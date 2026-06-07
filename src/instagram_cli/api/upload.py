@@ -10,10 +10,12 @@ def create_image_container(image_url, caption=None):
     return _post(f"/{USER_ID}/media", payload)["id"]
 
 
-def create_reel_container(video_url, caption=None):
+def create_reel_container(video_url, caption=None, trial=False):
     payload = {"video_url": video_url, "media_type": "REELS"}
     if caption:
         payload["caption"] = caption
+    if trial:
+        payload["sharing_type"] = "REELS_TRIAL"
     return _post(f"/{USER_ID}/media", payload)["id"]
 
 
@@ -59,13 +61,18 @@ def publish_container(creation_id):
     return _post(f"/{USER_ID}/media_publish", {"creation_id": creation_id})["id"]
 
 
+def promote_trial_reel(media_id):
+    """Promote a published Trial Reel to the main feed. media_id is the reel's media ID, not a container ID."""
+    return _post(f"/{USER_ID}/media_publish", {"creation_id": media_id})["id"]
+
+
 def post_image(image_url, caption=None):
     creation_id = create_image_container(image_url, caption)
     return publish_container(creation_id)
 
 
-def post_reel(video_url, caption=None):
-    creation_id = create_reel_container(video_url, caption)
+def post_reel(video_url, caption=None, trial=False):
+    creation_id = create_reel_container(video_url, caption, trial=trial)
     wait_for_container(creation_id)
     return publish_container(creation_id)
 
