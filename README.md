@@ -99,6 +99,18 @@ Publish a reel:
 instagram-cli post reel ./clip.mp4 --caption "My reel"
 ```
 
+Set a custom cover (thumbnail) — either a separate image or a frame from the video:
+
+```bash
+instagram-cli post reel ./clip.mp4 --cover ./cover.jpg          # local or HTTPS image
+instagram-cli post reel ./clip.mp4 --thumb-offset 2000          # frame at 2000 ms
+```
+
+`--cover` takes a local path or HTTPS URL (local images are served via the same ngrok
+tunnel as the video; recommended 1080×1920, non-9:16 images are center-cropped).
+`--thumb-offset` picks a frame from the video itself, given in milliseconds. If both are
+passed, `--cover` wins. If neither is passed, Instagram auto-selects a frame.
+
 Publish a carousel (2–10 items, images and/or videos, mix of local paths and URLs):
 
 ```bash

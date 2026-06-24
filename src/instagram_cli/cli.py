@@ -359,6 +359,26 @@ def main():
             "Only supported for local files."
         ),
     )
+    post_reel_p.add_argument(
+        "--cover",
+        metavar="IMG",
+        help=(
+            "Custom cover image for the reel, as a local file path or HTTPS URL.\n"
+            "Local images are served via the same ngrok tunnel as the video.\n"
+            "Recommended 1080×1920 (9:16); other ratios are center-cropped.\n"
+            "Takes precedence over --thumb-offset."
+        ),
+    )
+    post_reel_p.add_argument(
+        "--thumb-offset",
+        type=int,
+        metavar="MS",
+        help=(
+            "Pick a frame from the video as the cover, given as a millisecond\n"
+            "offset into the video (default: 0, the first frame).\n"
+            "Ignored if --cover is also given."
+        ),
+    )
 
     post_carousel_p = post_sub.add_parser(
         "carousel",
@@ -444,29 +464,56 @@ def main():
                     post_id = post_image(args.url, caption=args.caption)
                 print(f"Posted: {post_id}")
             elif args.post_command == "reel":
-                if _is_local(args.url):
-                    p = Path(args.url)
-                    if not p.exists():
-                        print(f"Error: file not found: {p}")
+                if args.cover and args.thumb_offset is not None:
+                    print("  Warning: --cover overrides --thumb-offset; ignoring --thumb-offset.", file=sys.stderr)
+
+                video_is_local = _is_local(args.url)
+                cover_is_local = bool(args.cover) and _is_local(args.cover)
+
+                transcoded = None
+                serve = []          # local files to expose via the tunnel
+                video_path = None
+                cover_path = None
+
+                if video_is_local:
+                    video_path = Path(args.url)
+                    if not video_path.exists():
+                        print(f"Error: file not found: {video_path}")
                         sys.exit(1)
-                    for w in check_reel(p):
+                    for w in check_reel(video_path):
                         print(f"  Warning: {w}", file=sys.stderr)
                     if args.transcode:
-                        transcoded = transcode_reel(p)
-                        try:
-                            print(f"  Starting public tunnel for {transcoded.name}...", file=sys.stderr)
-                            with public_tunnel([transcoded], authtoken=_ngrok_token()) as url_for:
-                                post_id = post_reel(url_for(transcoded), caption=args.caption, trial=args.trial)
-                        finally:
-                            transcoded.unlink(missing_ok=True)
+                        transcoded = transcode_reel(video_path)
+                        video_path = transcoded
+                    serve.append(video_path)
+                elif args.transcode:
+                    print("  Warning: --transcode is only supported for local files; uploading as-is.", file=sys.stderr)
+
+                if cover_is_local:
+                    cover_path = Path(args.cover)
+                    if not cover_path.exists():
+                        print(f"Error: cover file not found: {cover_path}")
+                        sys.exit(1)
+                    serve.append(cover_path)
+
+                try:
+                    if serve:
+                        print(f"  Starting public tunnel for {len(serve)} file(s)...", file=sys.stderr)
+                        with public_tunnel(serve, authtoken=_ngrok_token()) as url_for:
+                            video_url = url_for(video_path) if video_is_local else args.url
+                            cover_url = (url_for(cover_path) if cover_is_local else args.cover) or None
+                            post_id = post_reel(
+                                video_url, caption=args.caption, trial=args.trial,
+                                cover_url=cover_url, thumb_offset=args.thumb_offset,
+                            )
                     else:
-                        print(f"  Starting public tunnel for {p.name}...", file=sys.stderr)
-                        with public_tunnel([p], authtoken=_ngrok_token()) as url_for:
-                            post_id = post_reel(url_for(p), caption=args.caption, trial=args.trial)
-                else:
-                    if args.transcode:
-                        print("  Warning: --transcode is only supported for local files; uploading as-is.", file=sys.stderr)
-                    post_id = post_reel(args.url, caption=args.caption, trial=args.trial)
+                        post_id = post_reel(
+                            args.url, caption=args.caption, trial=args.trial,
+                            cover_url=args.cover or None, thumb_offset=args.thumb_offset,
+                        )
+                finally:
+                    if transcoded is not None:
+                        transcoded.unlink(missing_ok=True)
                 if args.trial:
                     print(f"Trial Reel: {post_id}")
                     print(f"  Promote to feed: instagram-cli media promote {post_id}")

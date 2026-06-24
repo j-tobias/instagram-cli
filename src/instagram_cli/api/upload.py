@@ -10,12 +10,18 @@ def create_image_container(image_url, caption=None):
     return _post(f"/{USER_ID}/media", payload)["id"]
 
 
-def create_reel_container(video_url, caption=None, trial=False):
+def create_reel_container(video_url, caption=None, trial=False, cover_url=None, thumb_offset=None):
     payload = {"video_url": video_url, "media_type": "REELS"}
     if caption:
         payload["caption"] = caption
     if trial:
         payload["sharing_type"] = "REELS_TRIAL"
+    # cover_url takes precedence over thumb_offset; Instagram ignores thumb_offset
+    # when a cover image is supplied.
+    if cover_url:
+        payload["cover_url"] = cover_url
+    elif thumb_offset is not None:
+        payload["thumb_offset"] = thumb_offset
     return _post(f"/{USER_ID}/media", payload)["id"]
 
 
@@ -71,8 +77,10 @@ def post_image(image_url, caption=None):
     return publish_container(creation_id)
 
 
-def post_reel(video_url, caption=None, trial=False):
-    creation_id = create_reel_container(video_url, caption, trial=trial)
+def post_reel(video_url, caption=None, trial=False, cover_url=None, thumb_offset=None):
+    creation_id = create_reel_container(
+        video_url, caption, trial=trial, cover_url=cover_url, thumb_offset=thumb_offset
+    )
     wait_for_container(creation_id)
     return publish_container(creation_id)
 
