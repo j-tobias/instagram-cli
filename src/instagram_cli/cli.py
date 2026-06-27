@@ -2,6 +2,7 @@ import os
 import sys
 import argparse
 from contextlib import contextmanager
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from pathlib import Path
 from instagram_cli.tunnel import public_tunnel
 from instagram_cli.api import (
@@ -23,6 +24,14 @@ from instagram_cli.fftools import check_reel, transcode_reel
 
 
 # ── input helpers ─────────────────────────────────────────────────────────
+
+def _version() -> str:
+    """Return the installed package version, falling back gracefully."""
+    try:
+        return _pkg_version("instagram-cli")
+    except PackageNotFoundError:
+        return "unknown"
+
 
 def _is_local(s: str) -> bool:
     return not s.startswith(("http://", "https://"))
@@ -522,7 +531,7 @@ def _build_parser():
     parser.add_argument(
         "--version",
         action="version",
-        version="%(prog)s 0.1.0",
+        version=f"%(prog)s {_version()}",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
