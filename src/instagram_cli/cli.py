@@ -1,6 +1,7 @@
 import os
 import sys
 import argparse
+from contextlib import contextmanager
 from pathlib import Path
 from instagram_cli.tunnel import public_tunnel
 from instagram_cli.api import (
@@ -13,14 +14,27 @@ from instagram_cli.api import (
     post_reel,
     post_carousel,
     promote_trial_reel,
+    publish_container,
     refresh_token,
     get_token_status,
     ENV_FILE,
 )
 from instagram_cli.fftools import check_reel, transcode_reel
 
+
+# ── input helpers ─────────────────────────────────────────────────────────
+
 def _is_local(s: str) -> bool:
     return not s.startswith(("http://", "https://"))
+
+
+def _local_path(s: str, label: str = "file") -> Path:
+    """Return *s* as a Path, exiting with an error if it does not exist."""
+    p = Path(s)
+    if not p.exists():
+        print(f"Error: {label} not found: {p}")
+        sys.exit(1)
+    return p
 
 
 def _ngrok_token() -> str:
@@ -34,6 +48,24 @@ def _ngrok_token() -> str:
         sys.exit(1)
     return tok
 
+
+@contextmanager
+def _maybe_tunnel(paths):
+    """Yield a ``path -> public URL`` resolver for the given local *paths*.
+
+    An ngrok tunnel is opened only when there is at least one local file to
+    serve. With no local files the resolver is ``None`` (every input is already
+    a public URL, so the resolver is never called).
+    """
+    if not paths:
+        yield None
+        return
+    print(f"  Starting public tunnel for {len(paths)} file(s)...", file=sys.stderr)
+    with public_tunnel(paths, authtoken=_ngrok_token()) as url_for:
+        yield url_for
+
+
+# ── output helpers ────────────────────────────────────────────────────────
 
 USAGE_LIMITS = """
 Usage limits (Instagram Graph API):
@@ -71,26 +103,23 @@ def _print_insights(items):
         print()
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        prog="instagram-cli",
-        description=(
-            "A CLI for the Instagram Graph API.\n\n"
-            "Read your profile and media, fetch post engagement insights, or publish\n"
-            "images, reels, and carousels directly from the terminal. All commands\n"
-            "require a valid access token set via the INSTAGRAM_ACCESS_TOKEN environment variable."
-        ),
-        epilog=USAGE_LIMITS,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "--version",
-        action="version",
-        version="%(prog)s 0.1.0",
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+def _print_unpublished(creation_id):
+    print(f"Container created (not published): {creation_id}")
+    print(f"  Publish it with: instagram-cli post publish {creation_id}")
+    print("  Note: Instagram media containers expire ~24 hours after creation.")
 
-    # connection
+
+def _report_post(result_id, publish):
+    """Print the standard result line for a post that may have been deferred."""
+    if publish:
+        print(f"Posted: {result_id}")
+    else:
+        _print_unpublished(result_id)
+
+
+# ── argument parser ───────────────────────────────────────────────────────
+
+def _add_connection_parser(subparsers):
     subparsers.add_parser(
         "connection",
         help="Test the API connection and print your account info",
@@ -106,7 +135,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    # auth
+
+def _add_auth_parser(subparsers):
     auth_parser = subparsers.add_parser(
         "auth",
         help="Manage your access token",
@@ -150,7 +180,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    # profile
+
+def _add_profile_parser(subparsers):
     subparsers.add_parser(
         "profile",
         help="Print your Instagram profile fields",
@@ -169,7 +200,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    # media
+
+def _add_media_parser(subparsers):
     media_parser = subparsers.add_parser(
         "media",
         help="Read your published media",
@@ -270,7 +302,8 @@ def main():
         help="Media ID of the Trial Reel to promote (from 'post reel --trial' output)",
     )
 
-    # post
+
+def _add_post_parser(subparsers):
     post_parser = subparsers.add_parser(
         "post",
         help="Publish a new post",
@@ -282,6 +315,12 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     post_sub = post_parser.add_subparsers(dest="post_command", required=True)
+
+    _no_publish_help = (
+        "Create the media container but do not publish it. Prints the\n"
+        "container ID, which you can publish later (within ~24h) with:\n"
+        "  instagram-cli post publish <creation_id>"
+    )
 
     post_image_p = post_sub.add_parser(
         "image",
@@ -310,6 +349,11 @@ def main():
         "--caption",
         metavar="TEXT",
         help="Caption for the post (optional). Supports hashtags and @mentions.",
+    )
+    post_image_p.add_argument(
+        "--no-publish",
+        action="store_true",
+        help=_no_publish_help,
     )
 
     post_reel_p = post_sub.add_parser(
@@ -379,6 +423,16 @@ def main():
             "Ignored if --cover is also given."
         ),
     )
+    post_reel_p.add_argument(
+        "--no-publish",
+        action="store_true",
+        help=(
+            "Create and process the media container but do not publish it.\n"
+            "The video is fully uploaded before the tunnel closes; the printed\n"
+            "container ID can be published later (within ~24h) with:\n"
+            "  instagram-cli post publish <creation_id>"
+        ),
+    )
 
     post_carousel_p = post_sub.add_parser(
         "carousel",
@@ -422,133 +476,209 @@ def main():
         metavar="TEXT",
         help="Caption for the carousel post (optional). Supports hashtags and @mentions.",
     )
+    post_carousel_p.add_argument(
+        "--no-publish",
+        action="store_true",
+        help=(
+            "Create the carousel container (and all child containers) but do not\n"
+            "publish it. All media is uploaded before the tunnel closes; the printed\n"
+            "container ID can be published later (within ~24h) with:\n"
+            "  instagram-cli post publish <creation_id>"
+        ),
+    )
 
-    args = parser.parse_args()
+    post_publish_p = post_sub.add_parser(
+        "publish",
+        help="Publish a previously created (--no-publish) media container",
+        description=(
+            "Publishes a media container that was created earlier with --no-publish.\n\n"
+            "Pass the container ID printed by 'post image/reel/carousel --no-publish'.\n"
+            "Containers expire roughly 24 hours after creation, so publish before then."
+        ),
+        epilog=(
+            "Example:\n"
+            "  instagram-cli post publish 17995678901234567"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    post_publish_p.add_argument(
+        "creation_id",
+        help="ID of the media container to publish (from a --no-publish run)",
+    )
+
+
+def _build_parser():
+    parser = argparse.ArgumentParser(
+        prog="instagram-cli",
+        description=(
+            "A CLI for the Instagram Graph API.\n\n"
+            "Read your profile and media, fetch post engagement insights, or publish\n"
+            "images, reels, and carousels directly from the terminal. All commands\n"
+            "require a valid access token set via the INSTAGRAM_ACCESS_TOKEN environment variable."
+        ),
+        epilog=USAGE_LIMITS,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version="%(prog)s 0.1.0",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    _add_connection_parser(subparsers)
+    _add_auth_parser(subparsers)
+    _add_profile_parser(subparsers)
+    _add_media_parser(subparsers)
+    _add_post_parser(subparsers)
+    return parser
+
+
+# ── command handlers ──────────────────────────────────────────────────────
+
+def _cmd_connection(args):
+    test_connection()
+
+
+def _cmd_auth(args):
+    if args.auth_command == "status":
+        _print_dict(get_token_status())
+    elif args.auth_command == "refresh":
+        result = refresh_token()
+        print(f"Token refreshed. Expires: {result['expires_at']}")
+
+
+def _cmd_profile(args):
+    _print_dict(get_profile())
+
+
+def _cmd_media(args):
+    if args.media_command == "list":
+        _print_media_list(get_media_list(limit=args.limit))
+    elif args.media_command == "get":
+        _print_dict(get_media(args.media_id))
+    elif args.media_command == "insights":
+        _print_insights(get_media_insights(args.media_id))
+    elif args.media_command == "promote":
+        post_id = promote_trial_reel(args.media_id)
+        print(f"Promoted: {post_id}")
+
+
+def _post_image(args):
+    publish = not args.no_publish
+    serve = [_local_path(args.url)] if _is_local(args.url) else []
+    with _maybe_tunnel(serve) as url_for:
+        url = url_for(serve[0]) if serve else args.url
+        result_id = post_image(url, caption=args.caption, publish=publish)
+    _report_post(result_id, publish)
+
+
+def _post_reel(args):
+    publish = not args.no_publish
+    if args.cover and args.thumb_offset is not None:
+        print("  Warning: --cover overrides --thumb-offset; ignoring --thumb-offset.", file=sys.stderr)
+
+    video_is_local = _is_local(args.url)
+    cover_is_local = bool(args.cover) and _is_local(args.cover)
+
+    transcoded = None
+    serve = []          # local files to expose via the tunnel
+    video_path = None
+    cover_path = None
+
+    if video_is_local:
+        video_path = _local_path(args.url)
+        for w in check_reel(video_path):
+            print(f"  Warning: {w}", file=sys.stderr)
+        if args.transcode:
+            transcoded = transcode_reel(video_path)
+            video_path = transcoded
+        serve.append(video_path)
+    elif args.transcode:
+        print("  Warning: --transcode is only supported for local files; uploading as-is.", file=sys.stderr)
+
+    if cover_is_local:
+        cover_path = _local_path(args.cover, label="cover file")
+        serve.append(cover_path)
 
     try:
-        if args.command == "connection":
-            test_connection()
+        with _maybe_tunnel(serve) as url_for:
+            video_url = url_for(video_path) if video_is_local else args.url
+            cover_url = (url_for(cover_path) if cover_is_local else args.cover) or None
+            result_id = post_reel(
+                video_url, caption=args.caption, trial=args.trial,
+                cover_url=cover_url, thumb_offset=args.thumb_offset,
+                publish=publish,
+            )
+    finally:
+        if transcoded is not None:
+            transcoded.unlink(missing_ok=True)
 
-        elif args.command == "auth":
-            if args.auth_command == "status":
-                _print_dict(get_token_status())
-            elif args.auth_command == "refresh":
-                result = refresh_token()
-                print(f"Token refreshed. Expires: {result['expires_at']}")
+    if not publish:
+        _print_unpublished(result_id)
+    elif args.trial:
+        print(f"Trial Reel: {result_id}")
+        print(f"  Promote to feed: instagram-cli media promote {result_id}")
+    else:
+        print(f"Posted: {result_id}")
 
-        elif args.command == "profile":
-            _print_dict(get_profile())
 
-        elif args.command == "media":
-            if args.media_command == "list":
-                _print_media_list(get_media_list(limit=args.limit))
-            elif args.media_command == "get":
-                _print_dict(get_media(args.media_id))
-            elif args.media_command == "insights":
-                _print_insights(get_media_insights(args.media_id))
-            elif args.media_command == "promote":
-                post_id = promote_trial_reel(args.media_id)
-                print(f"Promoted: {post_id}")
+def _post_carousel(args):
+    publish = not args.no_publish
+    image_urls = list(args.urls)
+    video_urls = list(args.video_urls)
+    items = [{"image_url": u} for u in image_urls]
+    items += [{"video_url": u} for u in video_urls]
+    if not 2 <= len(items) <= 10:
+        print("Error: carousel requires between 2 and 10 items (images + videos)")
+        sys.exit(1)
 
-        elif args.command == "post":
-            if args.post_command == "image":
-                if _is_local(args.url):
-                    p = Path(args.url)
-                    if not p.exists():
-                        print(f"Error: file not found: {p}")
-                        sys.exit(1)
-                    print(f"  Starting public tunnel for {p.name}...", file=sys.stderr)
-                    with public_tunnel([p], authtoken=_ngrok_token()) as url_for:
-                        post_id = post_image(url_for(p), caption=args.caption)
-                else:
-                    post_id = post_image(args.url, caption=args.caption)
-                print(f"Posted: {post_id}")
-            elif args.post_command == "reel":
-                if args.cover and args.thumb_offset is not None:
-                    print("  Warning: --cover overrides --thumb-offset; ignoring --thumb-offset.", file=sys.stderr)
+    serve = [_local_path(u) for u in image_urls + video_urls if _is_local(u)]
+    with _maybe_tunnel(serve) as url_for:
+        resolved = [
+            {"image_url": url_for(Path(u)) if _is_local(u) else u}
+            for u in image_urls
+        ] + [
+            {"video_url": url_for(Path(u)) if _is_local(u) else u}
+            for u in video_urls
+        ]
+        result_id = post_carousel(resolved, caption=args.caption, publish=publish)
+    _report_post(result_id, publish)
 
-                video_is_local = _is_local(args.url)
-                cover_is_local = bool(args.cover) and _is_local(args.cover)
 
-                transcoded = None
-                serve = []          # local files to expose via the tunnel
-                video_path = None
-                cover_path = None
+def _post_publish(args):
+    post_id = publish_container(args.creation_id)
+    print(f"Posted: {post_id}")
 
-                if video_is_local:
-                    video_path = Path(args.url)
-                    if not video_path.exists():
-                        print(f"Error: file not found: {video_path}")
-                        sys.exit(1)
-                    for w in check_reel(video_path):
-                        print(f"  Warning: {w}", file=sys.stderr)
-                    if args.transcode:
-                        transcoded = transcode_reel(video_path)
-                        video_path = transcoded
-                    serve.append(video_path)
-                elif args.transcode:
-                    print("  Warning: --transcode is only supported for local files; uploading as-is.", file=sys.stderr)
 
-                if cover_is_local:
-                    cover_path = Path(args.cover)
-                    if not cover_path.exists():
-                        print(f"Error: cover file not found: {cover_path}")
-                        sys.exit(1)
-                    serve.append(cover_path)
+_POST_HANDLERS = {
+    "image": _post_image,
+    "reel": _post_reel,
+    "carousel": _post_carousel,
+    "publish": _post_publish,
+}
 
-                try:
-                    if serve:
-                        print(f"  Starting public tunnel for {len(serve)} file(s)...", file=sys.stderr)
-                        with public_tunnel(serve, authtoken=_ngrok_token()) as url_for:
-                            video_url = url_for(video_path) if video_is_local else args.url
-                            cover_url = (url_for(cover_path) if cover_is_local else args.cover) or None
-                            post_id = post_reel(
-                                video_url, caption=args.caption, trial=args.trial,
-                                cover_url=cover_url, thumb_offset=args.thumb_offset,
-                            )
-                    else:
-                        post_id = post_reel(
-                            args.url, caption=args.caption, trial=args.trial,
-                            cover_url=args.cover or None, thumb_offset=args.thumb_offset,
-                        )
-                finally:
-                    if transcoded is not None:
-                        transcoded.unlink(missing_ok=True)
-                if args.trial:
-                    print(f"Trial Reel: {post_id}")
-                    print(f"  Promote to feed: instagram-cli media promote {post_id}")
-                else:
-                    print(f"Posted: {post_id}")
-            elif args.post_command == "carousel":
-                all_image_urls = list(args.urls)
-                all_video_urls = list(args.video_urls)
-                items = [{"image_url": u} for u in all_image_urls]
-                items += [{"video_url": u} for u in all_video_urls]
-                if not 2 <= len(items) <= 10:
-                    print("Error: carousel requires between 2 and 10 items (images + videos)")
-                    sys.exit(1)
-                local_paths = [
-                    Path(u) for u in all_image_urls + all_video_urls if _is_local(u)
-                ]
-                for p in local_paths:
-                    if not p.exists():
-                        print(f"Error: file not found: {p}")
-                        sys.exit(1)
-                if local_paths:
-                    print(f"  Starting public tunnel for {len(local_paths)} file(s)...", file=sys.stderr)
-                    with public_tunnel(local_paths, authtoken=_ngrok_token()) as url_for:
-                        resolved = [
-                            {"image_url": url_for(Path(u)) if _is_local(u) else u}
-                            for u in all_image_urls
-                        ] + [
-                            {"video_url": url_for(Path(u)) if _is_local(u) else u}
-                            for u in all_video_urls
-                        ]
-                        post_id = post_carousel(resolved, caption=args.caption)
-                else:
-                    post_id = post_carousel(items, caption=args.caption)
-                print(f"Posted: {post_id}")
 
+def _cmd_post(args):
+    _POST_HANDLERS[args.post_command](args)
+
+
+# ── entrypoint ────────────────────────────────────────────────────────────
+
+_COMMANDS = {
+    "connection": _cmd_connection,
+    "auth": _cmd_auth,
+    "profile": _cmd_profile,
+    "media": _cmd_media,
+    "post": _cmd_post,
+}
+
+
+def main():
+    parser = _build_parser()
+    args = parser.parse_args()
+    try:
+        _COMMANDS[args.command](args)
     except RuntimeError as e:
         print(f"Error: {e}")
         sys.exit(1)

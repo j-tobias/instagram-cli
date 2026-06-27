@@ -120,6 +120,26 @@ instagram-cli post carousel ./photo.jpg --video ./clip.mp4 --caption "Mixed"
 
 When a local file is given, the CLI automatically starts a temporary [ngrok](https://ngrok.com) tunnel to serve the file at a public HTTPS URL, which Instagram fetches at publish time. The tunnel is torn down as soon as the post is live. This requires `NGROK_AUTHTOKEN` in `~/.config/instagram-cli/.env` (see [Credentials](#credentials)).
 
+### Deferred publishing (`--no-publish`)
+
+Instagram's API has no native drafts or scheduling, but it does split publishing into two
+steps: create a media *container*, then publish it. Pass `--no-publish` to any `post`
+command to stop after the container is created and uploaded — it prints a container ID you
+can publish later:
+
+```bash
+instagram-cli post reel ./clip.mp4 --cover ./cover.jpg --no-publish
+#   -> Container created (not published): 17995678901234567
+
+instagram-cli post publish 17995678901234567
+#   -> Posted: 17850123456789012
+```
+
+For reels and carousels the media is fully uploaded (and processed) before the tunnel
+closes, so the local file is no longer needed at publish time. Containers expire roughly
+**24 hours** after creation, so this enables short-window deferral — drive it from `cron`
+or `at` for poor-man's scheduling — not arbitrary-date scheduling.
+
 | Type | Format | Max size | Aspect ratio |
 |---|---|---|---|
 | Image | JPEG | 8 MB | 4:5 to 1.91:1 |

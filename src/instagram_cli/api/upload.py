@@ -72,20 +72,24 @@ def promote_trial_reel(media_id):
     return _post(f"/{USER_ID}/media_publish", {"creation_id": media_id})["id"]
 
 
-def post_image(image_url, caption=None):
+def post_image(image_url, caption=None, publish=True):
     creation_id = create_image_container(image_url, caption)
+    if not publish:
+        return creation_id
     return publish_container(creation_id)
 
 
-def post_reel(video_url, caption=None, trial=False, cover_url=None, thumb_offset=None):
+def post_reel(video_url, caption=None, trial=False, cover_url=None, thumb_offset=None, publish=True):
     creation_id = create_reel_container(
         video_url, caption, trial=trial, cover_url=cover_url, thumb_offset=thumb_offset
     )
     wait_for_container(creation_id)
+    if not publish:
+        return creation_id
     return publish_container(creation_id)
 
 
-def post_carousel(items, caption=None):
+def post_carousel(items, caption=None, publish=True):
     children = []
     for item in items:
         child_id = create_carousel_item(
@@ -96,4 +100,6 @@ def post_carousel(items, caption=None):
             wait_for_container(child_id)
         children.append(child_id)
     creation_id = create_carousel_container(children, caption)
+    if not publish:
+        return creation_id
     return publish_container(creation_id)
